@@ -86,8 +86,11 @@ public final class ProntoWallet: NSObject {
                     tagId: tagId,
                     idAttribute: idAttribute
                 )
-            } catch {
+            } catch let error as ProvisioningError {
                 self.currentDelegate?.provisioning(didFailWith: error)
+                return
+            } catch {
+                self.currentDelegate?.provisioning(didFailWith: .networkError(error))
                 return
             }
 
@@ -110,6 +113,14 @@ public final class ProntoWallet: NSObject {
         signature: Data,
         from viewController: UIViewController
     ) {
+        guard #available(iOS 16.4, *) else {
+            currentDelegate?.provisioning(didFailWith: .passKitError(
+                NSError(domain: "ProntoProvisioningSDK", code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "In-app provisioning requires iOS 16.4 or later."])
+            ))
+            return
+        }
+
         let addPassVC: PKAddPassesViewController
         do {
             addPassVC = try PKAddPassesViewController(issuerData: issuerData, signature: signature)
