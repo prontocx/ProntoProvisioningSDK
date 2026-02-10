@@ -93,6 +93,31 @@ class TicketsViewController: UIViewController, ProvisioningDelegate {
 }
 ```
 
+### Fetching a User's Passes
+
+Use `fetchPasses` to retrieve the passes associated with a user. This is a pure data fetch with no UI — it returns an array of `Pass` objects via async/await.
+
+```swift
+do {
+    let passes = try await ProntoWallet.shared.fetchPasses(userId: "user-123")
+    for pass in passes {
+        print(pass.id, pass.active, pass.downloadURL)
+    }
+} catch {
+    print(error.localizedDescription)
+}
+```
+
+Each `Pass` contains:
+
+| Property             | Type      | Description                              |
+|----------------------|-----------|------------------------------------------|
+| `id`                 | `String`  | The pass reference ID.                   |
+| `active`             | `Bool`    | Whether the pass is currently active.    |
+| `downloadURL`        | `String`  | URL to download the pass.                |
+| `downloadURLApple`   | `String?` | Apple-specific download URL, if available. |
+| `downloadURLGoogle`  | `String?` | Google-specific download URL, if available. |
+
 ### Tag ID Attributes
 
 The `idAttribute` parameter controls which field is used to look up the tag on the Pronto backend:
