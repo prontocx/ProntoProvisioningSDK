@@ -47,6 +47,20 @@ public final class ProntoWallet: NSObject {
         PKAddPassesViewController.canAddPasses()
     }
 
+    /// Fetch passes for a user from the Pronto API.
+    ///
+    /// - Parameter userId: The user identifier to fetch passes for.
+    /// - Returns: An array of ``Pass`` objects.
+    /// - Throws: ``ProvisioningError`` if the SDK is not configured or the request fails.
+    public func fetchPasses(userId: String) async throws(ProvisioningError) -> [Pass] {
+        guard let configuration else {
+            throw .notConfigured
+        }
+
+        let apiClient = APIClient(configuration: configuration)
+        return try await apiClient.fetchPasses(userId: userId)
+    }
+
     /// Provision a pass to the user's Apple Wallet.
     ///
     /// This method fetches issuer data from the Pronto API, then presents the native

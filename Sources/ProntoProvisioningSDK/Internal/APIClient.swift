@@ -54,6 +54,40 @@ final class APIClient: Sendable {
         }
     }
 
+    /// Fetches passes for the given user.
+    func fetchPasses(userId: String) async throws(ProvisioningError) -> [Pass] {
+        let request: URLRequest
+        do {
+            request = try buildPassesRequest(userId: userId)
+        } catch {
+            throw .invalidResponse
+        }
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw .networkError(error)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw .invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let message = parseErrorMessage(from: data)
+            throw .serverError(statusCode: httpResponse.statusCode, message: message)
+        }
+
+        do {
+            let passesResponse = try JSONDecoder().decode(PassesResponse.self, from: data)
+            return passesResponse.toPasses()
+        } catch {
+            throw .invalidResponse
+        }
+    }
+
     // MARK: - Internal (visible for testing)
 
     func buildRequest(tagId: String, idAttribute: TagIdAttribute) throws -> URLRequest {
@@ -78,6 +112,24 @@ final class APIClient: Sendable {
         ]
 
         request.httpBody = try JSONEncoder().encode(body)
+        return request
+    }
+
+    func buildPassesRequest(userId: String) throws -> URLRequest {
+        let url = configuration.environment.baseURL
+            .appendingPathComponent("api/v2/user/\(userId)/passes")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = configuration.timeout
+
+        // HTTP Basic Auth: base64(apiKey:)
+        let credentials = "\(configuration.apiKey):"
+        let credentialData = credentials.data(using: .utf8)!
+        let base64Credentials = credentialData.base64EncodedString()
+        request.setValue("Basic \(base64Credentials)", forHTTPHeaderField: "Authorization")
+
         return request
     }
 

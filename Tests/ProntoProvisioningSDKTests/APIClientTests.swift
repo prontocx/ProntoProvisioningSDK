@@ -328,6 +328,282 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(decoded["id_attribute"], "subscription_id")
     }
 
+    // MARK: - buildPassesRequest
+
+    func testBuildPassesRequestURL() throws {
+        let client = APIClient(configuration: testConfig)
+        let request = try client.buildPassesRequest(userId: "user-42")
+
+        XCTAssertEqual(
+            request.url?.absoluteString,
+            "https://app.stage.prontocx.com/api/v2/user/user-42/passes"
+        )
+    }
+
+    func testBuildPassesRequestMethod() throws {
+        let client = APIClient(configuration: testConfig)
+        let request = try client.buildPassesRequest(userId: "user-42")
+
+        XCTAssertEqual(request.httpMethod, "GET")
+    }
+
+    func testBuildPassesRequestHeaders() throws {
+        let client = APIClient(configuration: testConfig)
+        let request = try client.buildPassesRequest(userId: "user-42")
+
+        XCTAssertNil(request.value(forHTTPHeaderField: "Content-Type"))
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "application/json")
+    }
+
+    func testBuildPassesRequestTimeout() throws {
+        let client = APIClient(configuration: testConfig)
+        let request = try client.buildPassesRequest(userId: "user-42")
+
+        XCTAssertEqual(request.timeoutInterval, 15.0)
+    }
+
+    func testBuildPassesRequestBasicAuth() throws {
+        let client = APIClient(configuration: testConfig)
+        let request = try client.buildPassesRequest(userId: "user-42")
+
+        let expectedCredentials = "test_api_key_123:"
+        let expectedBase64 = Data(expectedCredentials.utf8).base64EncodedString()
+        let expectedHeader = "Basic \(expectedBase64)"
+
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), expectedHeader)
+    }
+
+    func testBuildPassesRequestHasNoBody() throws {
+        let client = APIClient(configuration: testConfig)
+        let request = try client.buildPassesRequest(userId: "user-42")
+
+        XCTAssertNil(request.httpBody)
+    }
+
+    // MARK: - fetchPasses Success
+
+    func testFetchPassesSuccess() async throws {
+        let mockSession = MockURLSession()
+        let client = APIClient(configuration: testConfig, session: mockSession)
+
+        let responseJSON = """
+        {
+            "data": [
+                {
+                    "id": "ref-001",
+                    "type": "pass",
+                    "attributes": {
+                        "active": true,
+                        "download_url": "https://example.com/pass.pkpass",
+                        "download_url_apple": "https://example.com/pass-apple.pkpass",
+                        "download_url_google": null
+                    }
+                },
+                {
+                    "id": "ref-002",
+                    "type": "pass",
+                    "attributes": {
+                        "active": false,
+                        "download_url": "https://example.com/pass2.pkpass",
+                        "download_url_apple": null,
+                        "download_url_google": "https://example.com/pass2-google"
+                    }
+                }
+            ]
+        }
+        """.data(using: .utf8)!
+
+        mockSession.requestHandler = { request in
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (responseJSON, httpResponse)
+        }
+
+        let passes = try await client.fetchPasses(userId: "user-42")
+
+        XCTAssertEqual(passes.count, 2)
+
+        XCTAssertEqual(passes[0].id, "ref-001")
+        XCTAssertTrue(passes[0].active)
+        XCTAssertEqual(passes[0].downloadURL, "https://example.com/pass.pkpass")
+        XCTAssertEqual(passes[0].downloadURLApple, "https://example.com/pass-apple.pkpass")
+        XCTAssertNil(passes[0].downloadURLGoogle)
+
+        XCTAssertEqual(passes[1].id, "ref-002")
+        XCTAssertFalse(passes[1].active)
+        XCTAssertEqual(passes[1].downloadURL, "https://example.com/pass2.pkpass")
+        XCTAssertNil(passes[1].downloadURLApple)
+        XCTAssertEqual(passes[1].downloadURLGoogle, "https://example.com/pass2-google")
+    }
+
+    func testFetchPassesEmptyArray() async throws {
+        let mockSession = MockURLSession()
+        let client = APIClient(configuration: testConfig, session: mockSession)
+
+        let responseJSON = """
+        { "data": [] }
+        """.data(using: .utf8)!
+
+        mockSession.requestHandler = { request in
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (responseJSON, httpResponse)
+        }
+
+        let passes = try await client.fetchPasses(userId: "user-42")
+        XCTAssertTrue(passes.isEmpty)
+    }
+
+    // MARK: - fetchPasses Errors
+
+    func testFetchPassesNetworkError() async {
+        let mockSession = MockURLSession()
+        let client = APIClient(configuration: testConfig, session: mockSession)
+
+        mockSession.requestHandler = { _ in
+            throw URLError(.notConnectedToInternet)
+        }
+
+        do {
+            _ = try await client.fetchPasses(userId: "user-42")
+            XCTFail("Expected networkError")
+        } catch {
+            if case .networkError = error {
+                // Expected
+            } else {
+                XCTFail("Expected networkError, got \(error)")
+            }
+        }
+    }
+
+    func testFetchPassesServerError401() async {
+        let mockSession = MockURLSession()
+        let client = APIClient(configuration: testConfig, session: mockSession)
+
+        let errorJSON = """
+        {"error": "Unauthorized"}
+        """.data(using: .utf8)!
+
+        mockSession.requestHandler = { request in
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 401,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (errorJSON, httpResponse)
+        }
+
+        do {
+            _ = try await client.fetchPasses(userId: "user-42")
+            XCTFail("Expected serverError")
+        } catch {
+            if case .serverError(let statusCode, let message) = error {
+                XCTAssertEqual(statusCode, 401)
+                XCTAssertEqual(message, "Unauthorized")
+            } else {
+                XCTFail("Expected serverError, got \(error)")
+            }
+        }
+    }
+
+    func testFetchPassesServerError404() async {
+        let mockSession = MockURLSession()
+        let client = APIClient(configuration: testConfig, session: mockSession)
+
+        let errorJSON = """
+        {"error": "Not Found"}
+        """.data(using: .utf8)!
+
+        mockSession.requestHandler = { request in
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 404,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (errorJSON, httpResponse)
+        }
+
+        do {
+            _ = try await client.fetchPasses(userId: "user-42")
+            XCTFail("Expected serverError")
+        } catch {
+            if case .serverError(let statusCode, let message) = error {
+                XCTAssertEqual(statusCode, 404)
+                XCTAssertEqual(message, "Not Found")
+            } else {
+                XCTFail("Expected serverError, got \(error)")
+            }
+        }
+    }
+
+    func testFetchPassesInvalidResponseBody() async {
+        let mockSession = MockURLSession()
+        let client = APIClient(configuration: testConfig, session: mockSession)
+
+        mockSession.requestHandler = { request in
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return ("not json".data(using: .utf8)!, httpResponse)
+        }
+
+        do {
+            _ = try await client.fetchPasses(userId: "user-42")
+            XCTFail("Expected invalidResponse")
+        } catch {
+            if case .invalidResponse = error {
+                // Expected
+            } else {
+                XCTFail("Expected invalidResponse, got \(error)")
+            }
+        }
+    }
+
+    func testFetchPassesSendsCorrectRequest() async throws {
+        let mockSession = MockURLSession()
+        let client = APIClient(configuration: testConfig, session: mockSession)
+
+        var capturedRequest: URLRequest?
+
+        let responseJSON = """
+        { "data": [] }
+        """.data(using: .utf8)!
+
+        mockSession.requestHandler = { request in
+            capturedRequest = request
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (responseJSON, httpResponse)
+        }
+
+        _ = try await client.fetchPasses(userId: "user-99")
+
+        let request = try XCTUnwrap(capturedRequest)
+        XCTAssertEqual(request.httpMethod, "GET")
+        XCTAssertEqual(
+            request.url?.absoluteString,
+            "https://app.stage.prontocx.com/api/v2/user/user-99/passes"
+        )
+        XCTAssertNil(request.httpBody)
+    }
+
     func testFetchIssuerDataServerErrorWithMessageField() async {
         let mockSession = MockURLSession()
         let client = APIClient(configuration: testConfig, session: mockSession)
