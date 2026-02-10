@@ -336,7 +336,7 @@ final class APIClientTests: XCTestCase {
 
         XCTAssertEqual(
             request.url?.absoluteString,
-            "https://app.stage.prontocx.com/api/v2/user/user-42/passes"
+            "https://app.stage.prontocx.com/api/v2/users/user-42/passes"
         )
     }
 
@@ -599,7 +599,7 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(request.httpMethod, "GET")
         XCTAssertEqual(
             request.url?.absoluteString,
-            "https://app.stage.prontocx.com/api/v2/user/user-99/passes"
+            "https://app.stage.prontocx.com/api/v2/users/user-99/passes"
         )
         XCTAssertNil(request.httpBody)
     }

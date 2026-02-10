@@ -117,7 +117,7 @@ final class APIClient: Sendable {
 
     func buildPassesRequest(userId: String) throws -> URLRequest {
         let url = configuration.environment.baseURL
-            .appendingPathComponent("api/v2/user/\(userId)/passes")
+            .appendingPathComponent("api/v2/users/\(userId)/passes")
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
